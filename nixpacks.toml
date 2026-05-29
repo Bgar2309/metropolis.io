@@ -1,0 +1,22 @@
+# nixpacks.toml — à placer À LA RACINE du projet (TEST/nixpacks.toml)
+#
+# Indique à Railway comment builder ce monorepo pnpm et servir le client en statique.
+# Railway détecte ce fichier automatiquement, aucune config à cliquer dans l'UI.
+
+[phases.setup]
+# Node 20 (ton package.json exige >=20) + pnpm via corepack.
+nixPkgs = ["nodejs_20"]
+cmds = ["corepack enable", "corepack prepare pnpm@11.4.0 --activate"]
+
+[phases.install]
+# Installe TOUT le workspace depuis la racine (résout sim-core + protocol + client).
+cmds = ["pnpm install --frozen-lockfile"]
+
+[phases.build]
+# Build uniquement le client (qui tire ses dépendances workspace au passage).
+cmds = ["pnpm --filter @metro/client build"]
+
+[start]
+# Sert le dossier dist en statique. `serve` est récupéré via npx au démarrage.
+# $PORT est fourni par Railway.
+cmd = "npx --yes serve -s packages/client/dist -l $PORT"
