@@ -2,7 +2,7 @@
 // UI (toolbar, HUD, RCI meter, budget, overlay selector, speed, query panel), and wires
 // the message pipeline. The active tool determines what paint-dragging on the map does.
 
-import { IsoRenderer } from "./render/isoRenderer.js";
+import { SpriteRenderer } from "./render/spriteRenderer.js";
 import SimWorker from "./worker/simWorker.js?worker";
 import type { FromWorker, ToWorker, OverlayKind, CityStatsMsg, QueryResult } from "./worker/messages.js";
 import type { Command } from "@metro/sim-core";
@@ -91,7 +91,7 @@ function el<K extends keyof HTMLElementTagNameMap>(
 }
 
 async function main(): Promise<void> {
-  const renderer = new IsoRenderer();
+  const renderer = new SpriteRenderer();
   await renderer.init(document.getElementById("app")!);
 
   const worker = new SimWorker();
