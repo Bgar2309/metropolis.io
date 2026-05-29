@@ -4,8 +4,7 @@
 # Railway détecte ce fichier automatiquement, aucune config à cliquer dans l'UI.
 
 [phases.setup]
-# Node 20 (ton package.json exige >=20) + pnpm via corepack.
-nixPkgs = ["nodejs_20"]
+nixPkgs = ["nodejs_22"]
 cmds = ["corepack enable", "corepack prepare pnpm@11.4.0 --activate"]
 
 [phases.install]
