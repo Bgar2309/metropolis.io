@@ -1,0 +1,15 @@
+# .dockerignore — à placer À LA RACINE (à côté du Dockerfile).
+# Évite de copier dans l'image des dossiers lourds/inutiles : ça accélère le build
+# et empêche un node_modules local de polluer l'install propre faite dans l'image.
+
+node_modules
+**/node_modules
+**/dist
+**/.turbo
+.git
+.gitignore
+*.log
+.DS_Store
+docs
+.claude
+nixpacks.toml
