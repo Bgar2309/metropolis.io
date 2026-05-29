@@ -4,8 +4,9 @@
 // rejected (no-op) when unaffordable, so the action log stays internally consistent.
 
 import type { World } from "./world.js";
+import { TILE_FREE } from "./world.js";
 import { Net, Terrain, Zone } from "./constants.js";
-import { Build, STRUCTURES, type BuildType } from "./buildings.js";
+import { Build, getTile } from "./buildings.js";
 
 export type TaxCat = "R" | "C" | "I";
 export type ServiceKind = "police" | "fire";
@@ -53,11 +54,19 @@ export function applyCommand(world: World, cmd: Command): boolean {
     case "bulldoze": {
       if (!world.inBounds(cmd.x, cmd.y)) return false;
       const i = world.idx(cmd.x, cmd.y);
-      if (world.zone[i] === 0 && world.building[i] === 0 && world.net[i] === 0) return false;
+      const occupied = world.buildingOrigin[i] !== TILE_FREE;
+      if (world.zone[i] === 0 && world.building[i] === 0 && world.net[i] === 0 && !occupied)
+        return false;
       if (!afford(world, COST_BULLDOZE)) return false;
-      world.zone[i] = Zone.None;
-      world.building[i] = 0;
-      world.stage[i] = 0;
+      // A building footprint is cleared whole (from any of its tiles); everything else is a
+      // plain single-tile clear.
+      if (occupied) {
+        world.clearBuilding(cmd.x, cmd.y);
+      } else {
+        world.zone[i] = Zone.None;
+        world.building[i] = 0;
+        world.stage[i] = 0;
+      }
       world.net[i] = Net.None;
       return true;
     }
@@ -80,16 +89,12 @@ export function applyCommand(world: World, cmd: Command): boolean {
       return true;
     }
     case "placeBuilding": {
-      if (!world.inBounds(cmd.x, cmd.y)) return false;
-      const i = world.idx(cmd.x, cmd.y);
-      if (world.terrain[i] === Terrain.Water) return false;
-      if (world.building[i] !== Build.None) return false;
-      const def = STRUCTURES[cmd.build as BuildType];
-      if (!def || def.id === Build.None) return false;
+      const def = getTile(cmd.build);
+      if (!def || def.kind !== "building" || def.id === Build.None) return false;
+      // canPlace enforces in-bounds, non-water, free, and flat across the whole footprint.
+      if (!world.canPlace(cmd.x, cmd.y, def.footprint)) return false;
       if (!afford(world, def.cost)) return false;
-      world.zone[i] = Zone.None;
-      world.stage[i] = 0;
-      world.building[i] = cmd.build;
+      world.stampBuilding(cmd.x, cmd.y, def);
       return true;
     }
     case "setTax": {

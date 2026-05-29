@@ -13,6 +13,17 @@ import {
   START_YEAR,
 } from "./constants.js";
 
+// Sentinel stored in buildingOrigin for a tile that no building footprint covers.
+// (0xFFFFFFFF can never be a valid tile index for any realistic map size.)
+export const TILE_FREE = 0xffffffff;
+
+// Minimal shape stampBuilding needs from a tile definition: its serialized id plus the
+// footprint rectangle. The registry's TileDef satisfies this structurally.
+export interface Footprint {
+  w: number;
+  h: number;
+}
+
 export interface WorldStats {
   population: number;
   jobs: number;
@@ -53,7 +64,8 @@ export class World {
 
   // --- surface layer ---
   readonly zone: Uint8Array; // ZoneType
-  readonly building: Uint16Array; // building catalog id (0 = none)
+  readonly building: Uint16Array; // building catalog id (0 = none); set on the origin tile only
+  readonly buildingOrigin: Uint32Array; // index of the footprint's origin tile, or TILE_FREE
   readonly stage: Uint8Array; // building growth stage 0..n
   readonly net: Uint8Array; // Net bitfield
 
@@ -85,6 +97,7 @@ export class World {
     this.altitude = new Uint8Array(n);
     this.zone = new Uint8Array(n);
     this.building = new Uint16Array(n);
+    this.buildingOrigin = new Uint32Array(n).fill(TILE_FREE);
     this.stage = new Uint8Array(n);
     this.net = new Uint8Array(n);
     this.under = new Uint8Array(n);
@@ -121,6 +134,61 @@ export class World {
 
   inBounds(x: number, y: number): boolean {
     return x >= 0 && y >= 0 && x < this.width && y < this.height;
+  }
+
+  // Whether an NxM building anchored at (x,y) can be stamped: the whole rectangle must be
+  // in bounds, on non-water tiles, free of any existing footprint, and perfectly flat
+  // (every tile shares the origin's altitude — SC2K forbids building across a slope).
+  canPlace(x: number, y: number, footprint: Footprint): boolean {
+    const { w, h } = footprint;
+    if (w < 1 || h < 1) return false;
+    if (!this.inBounds(x, y) || !this.inBounds(x + w - 1, y + h - 1)) return false;
+    const baseAlt = this.altitude[this.idx(x, y)]!;
+    for (let dy = 0; dy < h; dy++) {
+      for (let dx = 0; dx < w; dx++) {
+        const i = this.idx(x + dx, y + dy);
+        if (this.terrain[i] === Terrain.Water) return false;
+        if (this.buildingOrigin[i] !== TILE_FREE) return false;
+        if (this.altitude[i] !== baseAlt) return false;
+      }
+    }
+    return true;
+  }
+
+  // Stamp a building over its footprint. The catalog id lives on the origin tile only (so
+  // sim passes that scan `building` count each structure once); every covered tile points
+  // back to the origin via buildingOrigin and has any zone/growth cleared. Callers should
+  // gate this behind canPlace.
+  stampBuilding(x: number, y: number, def: { id: number; footprint: Footprint }): void {
+    const origin = this.idx(x, y);
+    const { w, h } = def.footprint;
+    for (let dy = 0; dy < h; dy++) {
+      for (let dx = 0; dx < w; dx++) {
+        const i = this.idx(x + dx, y + dy);
+        this.zone[i] = Zone.None;
+        this.stage[i] = 0;
+        this.building[i] = dx === 0 && dy === 0 ? def.id : 0;
+        this.buildingOrigin[i] = origin;
+      }
+    }
+  }
+
+  // Clear the entire footprint that covers (x,y), reachable from any of its tiles via
+  // buildingOrigin. Returns false if the tile holds no building. buildingOrigin is the
+  // authoritative occupancy record, so we clear every tile pointing at the same origin —
+  // the undo never depends on the registry agreeing with what was actually stamped.
+  clearBuilding(x: number, y: number): boolean {
+    if (!this.inBounds(x, y)) return false;
+    const origin = this.buildingOrigin[this.idx(x, y)]!;
+    if (origin === TILE_FREE) return false;
+    for (let i = 0; i < this.size; i++) {
+      if (this.buildingOrigin[i] !== origin) continue;
+      this.building[i] = 0;
+      this.buildingOrigin[i] = TILE_FREE;
+      this.zone[i] = Zone.None;
+      this.stage[i] = 0;
+    }
+    return true;
   }
 }
 
@@ -185,7 +253,7 @@ function makeValueNoise(seed: number): (x: number, y: number) => number {
 // a cheap integrity check for saves / ranked verification.
 export function hashWorld(world: World): number {
   let h = 0x811c9dc5;
-  const mix = (arr: Uint8Array | Uint16Array): void => {
+  const mix = (arr: Uint8Array | Uint16Array | Uint32Array): void => {
     for (let i = 0; i < arr.length; i++) {
       h ^= arr[i]!;
       h = Math.imul(h, 0x01000193);
@@ -195,6 +263,7 @@ export function hashWorld(world: World): number {
   mix(world.altitude);
   mix(world.zone);
   mix(world.building);
+  mix(world.buildingOrigin);
   mix(world.stage);
   mix(world.net);
   mix(world.under);
