@@ -1,0 +1,23 @@
+{
+  "name": "metropolis-io",
+  "version": "0.0.0",
+  "private": true,
+  "description": "SimCity 2000-style city builder for the browser with an online meta layer",
+  "type": "module",
+  "scripts": {
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "dev": "pnpm --filter @metro/client dev",
+    "lint": "eslint ."
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  },
+  "packageManager": "pnpm@11.4.0",
+  "engines": {
+    "node": ">=20"
+  }
+}

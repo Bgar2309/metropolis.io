@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Metropolis.io</title>
+    <style>
+      :root {
+        --panel: rgba(8, 22, 33, 0.86);
+        --ink: #cfe6f5;
+        --accent: #9fd0ec;
+        --on: #2f6fd0;
+      }
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #0b1d2a; }
+      #app { position: fixed; inset: 0; }
+      canvas { display: block; }
+      #ui { font: 12px/1.35 system-ui, sans-serif; color: var(--ink); }
+
+      .topbar {
+        position: fixed; top: 0; left: 0; right: 0; height: 34px;
+        display: flex; align-items: center; gap: 16px; padding: 0 12px;
+        background: var(--panel); user-select: none; z-index: 10;
+      }
+      .topbar .warn { color: #ff6b5e; font-weight: 700; }
+      .speeds { margin-left: auto; display: flex; gap: 4px; }
+      .speeds button { width: 34px; }
+
+      .toolbar {
+        position: fixed; top: 34px; left: 0; bottom: 0; width: 120px;
+        display: flex; flex-direction: column; gap: 3px; padding: 8px;
+        background: var(--panel); overflow-y: auto; user-select: none; z-index: 10;
+      }
+      .group-label {
+        margin-top: 6px; font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
+        color: var(--accent); opacity: .8;
+      }
+
+      .sidebar {
+        position: fixed; top: 34px; right: 0; bottom: 0; width: 220px;
+        display: flex; flex-direction: column; gap: 8px; padding: 8px;
+        background: var(--panel); overflow-y: auto; user-select: none; z-index: 10;
+      }
+      .panel { background: rgba(255,255,255,0.04); border-radius: 6px; padding: 6px 8px; }
+      .panel-title {
+        font-size: 11px; letter-spacing: .06em; text-transform: uppercase;
+        color: var(--accent); margin-bottom: 4px;
+      }
+
+      .overlays { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; }
+
+      .rci { display: flex; gap: 10px; justify-content: center; align-items: flex-end; height: 72px; padding: 4px 0; }
+      .rci-col { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; }
+      .rci-bar { width: 22px; min-height: 2px; border-radius: 2px 2px 0 0; transition: height .25s; }
+      .rci-bar.r { background: #33cc66; }
+      .rci-bar.c { background: #3399ff; }
+      .rci-bar.i { background: #ffcc33; }
+      .rci-col span { margin-top: 2px; font-weight: 700; }
+
+      .slider { display: grid; grid-template-columns: 64px 1fr 30px; align-items: center; gap: 6px; margin: 2px 0; }
+      .slider input { width: 100%; }
+      .slider-val { text-align: right; }
+      .budget-row { display: flex; justify-content: space-between; margin-top: 3px; }
+      .query-body { min-height: 60px; }
+
+      button {
+        font: 12px system-ui, sans-serif; color: var(--ink);
+        background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12);
+        border-radius: 4px; padding: 4px 6px; cursor: pointer; text-align: left;
+      }
+      button:hover { background: rgba(255,255,255,0.12); }
+      button.on { background: var(--on); border-color: var(--on); color: #fff; }
+      .overlays button, .speeds button { text-align: center; }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <div id="ui"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
