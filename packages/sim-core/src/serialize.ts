@@ -54,6 +54,13 @@ function u16Layer(name: string, arr: Uint16Array): TileLayer {
   return { name, dtype: "u16", base64: bytesToB64(new Uint8Array(arr.buffer, arr.byteOffset, arr.byteLength)) };
 }
 
+// buildingOrigin is a Uint32Array. The save protocol's dtype enum only knows u8/u16, so we
+// persist the raw little-endian bytes (4 per cell) and reconstruct the typed view by layer
+// name in fromSave — the dtype tag is just transport metadata here.
+function u32AsBytesLayer(name: string, arr: Uint32Array): TileLayer {
+  return { name, dtype: "u8", base64: bytesToB64(new Uint8Array(arr.buffer, arr.byteOffset, arr.byteLength)) };
+}
+
 const U8_FIELDS = [
   "terrain",
   "altitude",
@@ -75,6 +82,7 @@ export function toSave(world: World, name: string, seed: number): SaveFile {
   const layers: TileLayer[] = [];
   for (const f of U8_FIELDS) layers.push(u8Layer(f, world[f]));
   layers.push(u16Layer("building", world.building));
+  layers.push(u32AsBytesLayer("buildingOrigin", world.buildingOrigin));
 
   return {
     version: SAVE_VERSION,
@@ -110,6 +118,12 @@ export function fromSave(save: SaveFile): { world: World; seed: number } {
     const bytes = b64ToBytes(bld.base64);
     const u16 = new Uint16Array(bytes.buffer, bytes.byteOffset, world.size);
     world.building.set(u16);
+  }
+  const bo = byName.get("buildingOrigin");
+  if (bo) {
+    const bytes = b64ToBytes(bo.base64);
+    const u32 = new Uint32Array(bytes.buffer, bytes.byteOffset, world.size);
+    world.buildingOrigin.set(u32);
   }
 
   world.clock.tick = save.tick;
