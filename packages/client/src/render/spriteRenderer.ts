@@ -13,30 +13,16 @@
 // the child order of surfaceLayer, and we keep pool slot i == sorted item i, so child
 // order == sort order with no per-frame reparenting.
 
-import { Application, Container, Graphics, Sprite } from "pixi.js";
-import { TILE_W, TILE_H, ALT_STEP, tileToScreen, screenToTile } from "../iso.js";
+import { Application, Assets, Container, Graphics, Rectangle, Sprite, Texture, type Ticker } from "pixi.js";
+import { TILE_W, TILE_H, tileToScreen, screenToTile } from "../iso.js";
 import { PlaceholderTextures } from "./textures.js";
+import { TerrainPainter } from "./terrain.js";
 import type { OverlayKind } from "../worker/messages.js";
 
-const Terrain = { Land: 0, Water: 1, Shore: 2, Forest: 3 } as const;
 const Net = { Road: 1 << 0, Rail: 1 << 1, PowerLine: 1 << 2 } as const;
 const Build = { None: 0, CoalPlant: 1, GasPlant: 2, Police: 3, Fire: 4, Park: 5 } as const;
 
-const TERRAIN_COLOR: Record<number, number> = {
-  [Terrain.Land]: 0x5a8f4a,
-  [Terrain.Water]: 0x2f6f9f,
-  [Terrain.Shore]: 0xc2b280,
-  [Terrain.Forest]: 0x2f6b34,
-};
-
 const STAGE_LIFT = 5; // px of height per growth stage
-
-function shade(color: number, factor: number): number {
-  const r = Math.min(255, Math.max(0, ((color >> 16) & 0xff) * factor));
-  const g = Math.min(255, Math.max(0, ((color >> 8) & 0xff) * factor));
-  const b = Math.min(255, Math.max(0, (color & 0xff) * factor));
-  return (r << 16) | (g << 8) | b;
-}
 
 type U8 = Uint8Array<ArrayBufferLike>;
 type U16 = Uint16Array<ArrayBufferLike>;
@@ -66,7 +52,7 @@ export class SpriteRenderer {
   private readonly hoverG = new Graphics();
 
   private tex!: PlaceholderTextures;
-  private readonly terrainPool: Sprite[] = [];
+  private terrainPainter!: TerrainPainter;
   private readonly surfacePool: Sprite[] = [];
   private readonly items: DrawItem[] = [];
 
@@ -99,16 +85,45 @@ export class SpriteRenderer {
     await this.app.init({ resizeTo: window, background: 0x0b1d2a, antialias: true });
     host.appendChild(this.app.canvas);
     this.tex = new PlaceholderTextures(this.app.renderer);
+    this.terrainPainter = new TerrainPainter(this.terrainLayer);
     this.world.addChild(this.terrainLayer, this.surfaceLayer, this.overlayG, this.hoverG);
     this.app.stage.addChild(this.world);
     this.installInput();
     this.centerCamera();
+    // Drive the water shimmer off Pixi's own frame clock — independent of the sim tick, so
+    // it stays smooth at any game speed and touches nothing in the simulation.
+    this.app.ticker.add((tk: Ticker) => this.terrainPainter.animate(tk.lastTime));
+    // Use packed terrain art if the atlas ships any `terrain_*` frames; otherwise the
+    // painter stays on its procedural path. Self-contained so main.ts needn't wire it.
+    void this.loadAtlas("atlas.json");
   }
 
-  // No-op until a real atlas exists. Kept async so callers can await atlas loading once
-  // textures.ts is replaced by a packed spritesheet.
+  // Load `terrain_<mask>` coast-mask frames from a packed atlas, if present, and hand them
+  // to the terrain painter. Safe to call before or after the first snapshot — a snapshot
+  // already drawn is rebuilt with the new art. A missing/empty atlas leaves the procedural
+  // path untouched.
   async loadAtlas(atlasUrl: string): Promise<void> {
-    void atlasUrl;
+    try {
+      const meta = (await (await fetch(atlasUrl)).json()) as {
+        frames?: Record<string, { x: number; y: number; w: number; h: number }>;
+      };
+      const frames = meta.frames ?? {};
+      const terrainKeys = Object.keys(frames).filter((k) => /^terrain_\d+$/.test(k));
+      if (terrainKeys.length === 0) return;
+
+      const pngUrl = atlasUrl.replace(/atlas\.json$/, "atlas.png").replace(/\.json$/, ".png");
+      const sheet = (await Assets.load(pngUrl)) as Texture;
+      const map = new Map<number, Texture>();
+      for (const key of terrainKeys) {
+        const mask = Number(key.slice("terrain_".length));
+        const r = frames[key]!;
+        map.set(mask, new Texture({ source: sheet.source, frame: new Rectangle(r.x, r.y, r.w, r.h) }));
+      }
+      this.terrainPainter.setAtlasFrames(map);
+      if (this.width > 0) this.terrainPainter.build(this.width, this.height, this.terrain, this.altitude);
+    } catch {
+      // No atlas served (or malformed) — procedural terrain stands.
+    }
   }
 
   setSnapshot(width: number, height: number, terrain: U8, altitude: U8): void {
@@ -122,7 +137,7 @@ export class SpriteRenderer {
     this.net = new Uint8Array(n);
     this.building = new Uint16Array(n);
     this.power = new Uint8Array(n);
-    this.drawTerrain();
+    this.terrainPainter.build(width, height, terrain, altitude);
     this.drawSurface();
     this.centerCamera();
   }
@@ -149,17 +164,6 @@ export class SpriteRenderer {
 
   // --- pooling ---
 
-  private terrainSprite(i: number): Sprite {
-    let s = this.terrainPool[i];
-    if (!s) {
-      s = new Sprite(this.tex.diamond());
-      s.anchor.set(0.5, 0.5);
-      this.terrainLayer.addChild(s);
-      this.terrainPool[i] = s;
-    }
-    return s;
-  }
-
   private surfaceSprite(i: number): Sprite {
     let s = this.surfacePool[i];
     if (!s) {
@@ -168,27 +172,6 @@ export class SpriteRenderer {
       this.surfacePool[i] = s;
     }
     return s;
-  }
-
-  // --- terrain (static; rebuilt only on snapshot) ---
-
-  private drawTerrain(): void {
-    const diamond = this.tex.diamond();
-    let i = 0;
-    for (let y = 0; y < this.height; y++) {
-      for (let x = 0; x < this.width; x++, i++) {
-        const alt = this.altitude[i]!;
-        const { sx, sy } = tileToScreen(x, y, alt);
-        const base = TERRAIN_COLOR[this.terrain[i]!] ?? 0xff00ff;
-        const s = this.terrainSprite(i);
-        s.texture = diamond;
-        s.tint = shade(base, 0.7 + alt / 40);
-        s.alpha = 1;
-        s.position.set(sx, sy);
-        s.visible = true;
-      }
-    }
-    for (let k = i; k < this.terrainPool.length; k++) this.terrainPool[k]!.visible = false;
   }
 
   // --- surface (pooled, re-sorted back-to-front every tick) ---
