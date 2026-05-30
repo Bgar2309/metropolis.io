@@ -5,7 +5,7 @@
 
 import type { World } from "./world.js";
 import { TILE_FREE } from "./world.js";
-import { Net, Terrain, Zone } from "./constants.js";
+import { Net, Terrain, Under, Zone } from "./constants.js";
 import { Build, getTile } from "./buildings.js";
 
 export type TaxCat = "R" | "C" | "I";
@@ -16,6 +16,7 @@ export type Command =
   | { kind: "bulldoze"; x: number; y: number }
   | { kind: "road"; x: number; y: number }
   | { kind: "powerline"; x: number; y: number }
+  | { kind: "pipe"; x: number; y: number }
   | { kind: "placeBuilding"; x: number; y: number; build: number }
   | { kind: "setTax"; cat: TaxCat; rate: number }
   | { kind: "setFunding"; service: ServiceKind; level: number }
@@ -29,6 +30,7 @@ export interface LoggedCommand {
 const COST_ZONE = 10;
 const COST_ROAD = 10;
 const COST_POWERLINE = 5;
+const COST_PIPE = 5;
 const COST_BULLDOZE = 1;
 
 function afford(world: World, cost: number): boolean {
@@ -55,7 +57,13 @@ export function applyCommand(world: World, cmd: Command): boolean {
       if (!world.inBounds(cmd.x, cmd.y)) return false;
       const i = world.idx(cmd.x, cmd.y);
       const occupied = world.buildingOrigin[i] !== TILE_FREE;
-      if (world.zone[i] === 0 && world.building[i] === 0 && world.net[i] === 0 && !occupied)
+      if (
+        world.zone[i] === 0 &&
+        world.building[i] === 0 &&
+        world.net[i] === 0 &&
+        world.under[i] === 0 &&
+        !occupied
+      )
         return false;
       if (!afford(world, COST_BULLDOZE)) return false;
       // A building footprint is cleared whole (from any of its tiles); everything else is a
@@ -68,6 +76,7 @@ export function applyCommand(world: World, cmd: Command): boolean {
         world.stage[i] = 0;
       }
       world.net[i] = Net.None;
+      world.under[i] = Under.None;
       return true;
     }
     case "road": {
@@ -86,6 +95,17 @@ export function applyCommand(world: World, cmd: Command): boolean {
       if (world.net[i]! & Net.PowerLine) return false;
       if (!afford(world, COST_POWERLINE)) return false;
       world.net[i] = (world.net[i]! | Net.PowerLine) & 0xff;
+      return true;
+    }
+    case "pipe": {
+      // Underground water main. Lives on the `under` layer (separate from the surface), so
+      // it can coexist with a road or zone on the same tile. Mirrors powerline placement.
+      if (!world.inBounds(cmd.x, cmd.y)) return false;
+      const i = world.idx(cmd.x, cmd.y);
+      if (world.terrain[i] === Terrain.Water) return false;
+      if (world.under[i]! & Under.Pipe) return false;
+      if (!afford(world, COST_PIPE)) return false;
+      world.under[i] = (world.under[i]! | Under.Pipe) & 0xff;
       return true;
     }
     case "placeBuilding": {

@@ -8,8 +8,10 @@ import { Zone } from "./constants.js";
 import type { Command } from "./commands.js";
 
 // Build a small powered, road-served residential block on guaranteed-land tiles, then
-// run the sim and assert the city actually develops.
-function foundCity(seed: number): Engine {
+// run the sim and assert the city actually develops. When `withWater` is set the block is
+// also served by a pump feeding an underground pipe main; without it the zones stay dry
+// and growth is suppressed (mirrors how unpowered tiles are penalised).
+function foundCity(seed: number, withWater = true): Engine {
   const engine = new Engine({ width: 32, height: 32, seed, passes: createDefaultPasses() });
   generateTerrain(engine.world, seed);
 
@@ -39,6 +41,13 @@ function foundCity(seed: number): Engine {
     { kind: "powerline", x: ox + 1, y: oy },
     { kind: "powerline", x: ox + 1, y: oy + 1 },
   ];
+  if (withWater) {
+    // Water path: pump -> pipe -> pipe, the last pipe sits next to the zone block so water
+    // conducts through the contiguous zoned tiles (exactly mirroring the power path).
+    cmds.push({ kind: "placeBuilding", x: ox, y: oy + 5, build: Build.Pump });
+    cmds.push({ kind: "pipe", x: ox, y: oy + 4 });
+    cmds.push({ kind: "pipe", x: ox, y: oy + 3 });
+  }
   // A row of road + residential/commercial lots beside it.
   for (let k = 0; k < 4; k++) {
     cmds.push({ kind: "road", x: ox + 1 + k, y: oy + 1 });
@@ -64,7 +73,51 @@ describe("simulation", () => {
     expect(engine.world.stats.powerSupply).toBeGreaterThan(0);
   });
 
+  it("reports water supply from the pump", () => {
+    const engine = foundCity(42);
+    engine.run(5);
+    expect(engine.world.stats.waterSupply).toBeGreaterThan(0);
+  });
+
   it("stays deterministic with the full pass pipeline", () => {
+    const a = foundCity(7);
+    const b = foundCity(7);
+    a.run(200);
+    b.run(200);
+    expect(hashWorld(a.world)).toBe(hashWorld(b.world));
+  });
+});
+
+describe("water", () => {
+  it("irrigates the zone block through the pipe network", () => {
+    const engine = foundCity(42);
+    engine.run(5);
+    const w = engine.world;
+    // At least one developed-or-zoned tile is reachable from the pump, so supply meets
+    // demand and the drought flag stays clear.
+    expect(w.stats.waterSupply).toBeGreaterThan(0);
+    expect(w.stats.drought).toBe(false);
+    let watered = 0;
+    for (let i = 0; i < w.size; i++) if (w.water[i] === 1) watered++;
+    expect(watered).toBeGreaterThan(0);
+  });
+
+  it("a city without water does not grow past the dry threshold", () => {
+    // Same powered, road-served block but with no pump or pipes: the water penalty keeps
+    // every lot below the growth threshold, so population never takes off.
+    const dry = foundCity(42, false);
+    dry.run(400);
+    expect(dry.world.stats.waterSupply).toBe(0);
+    expect(dry.world.stats.population).toBe(0);
+
+    // The identical block *with* water does develop a population — proof the only
+    // difference is the water supply.
+    const wet = foundCity(42, true);
+    wet.run(400);
+    expect(wet.world.stats.population).toBeGreaterThan(dry.world.stats.population);
+  });
+
+  it("stays deterministic with water infrastructure in the pipeline", () => {
     const a = foundCity(7);
     const b = foundCity(7);
     a.run(200);
