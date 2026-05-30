@@ -20,10 +20,11 @@ export interface TileDef {
   coverage: number; // effect radius in tiles (services/amenities)
   sprite: string; // atlas key (logical name)
   unlockPop?: number; // population gate, if any
+  unlockYear?: number; // calendar-year gate, if any (undefined = available from game start)
 }
 
 // --- id namespaces -------------------------------------------------------------------
-// Buildings keep their legacy Build byte (0-8) so World.building bytes map straight to a
+// Buildings keep their legacy Build byte (0+) so World.building bytes map straight to a
 // tile id. Zones and nets live in separate high ranges so the three layers never collide
 // inside the single TILES map.
 export const Build = {
@@ -33,9 +34,17 @@ export const Build = {
   Police: 3,
   Fire: 4,
   Park: 5,
-  Pump: 6,
-  WaterTower: 7,
-  Treatment: 8,
+  // SimCity 2000-inspired power plants (ids 6-10). These extend the original coal/gas pair
+  // so the byte stored in World.building still maps straight to a tile id.
+  HydroPlant: 6,
+  WindTurbine: 7,
+  SolarPlant: 8,
+  NuclearPlant: 9,
+  MicrowavePlant: 10,
+  // Water sources (ids 11+): the underground-pipe analog of the power plants.
+  Pump: 11,
+  WaterTower: 12,
+  Treatment: 13,
 } as const;
 export type BuildType = (typeof Build)[keyof typeof Build];
 
@@ -49,16 +58,31 @@ const netTileId = (bit: number): number => NET_ID_BASE + bit;
 export const TILES: Record<number, TileDef> = {
   // Buildings (values identical to the former STRUCTURES table).
   [Build.None]: { id: Build.None, kind: "building", name: "—", footprint: { w: 1, h: 1 }, cost: 0, maintenance: 0, power: { output: 0, demand: 0 }, water: { output: 0, demand: 0 }, pollution: 0, coverage: 0, sprite: "none" },
-  [Build.CoalPlant]: { id: Build.CoalPlant, kind: "building", name: "Coal Power Plant", footprint: { w: 1, h: 1 }, cost: 4000, maintenance: 100, power: { output: 2000, demand: 0 }, water: { output: 0, demand: 0 }, pollution: 60, coverage: 0, sprite: "coal_plant" },
-  [Build.GasPlant]: { id: Build.GasPlant, kind: "building", name: "Gas Turbine", footprint: { w: 1, h: 1 }, cost: 2000, maintenance: 50, power: { output: 500, demand: 0 }, water: { output: 0, demand: 0 }, pollution: 18, coverage: 0, sprite: "gas_plant" },
-  [Build.Police]: { id: Build.Police, kind: "building", name: "Police Station", footprint: { w: 1, h: 1 }, cost: 500, maintenance: 100, power: { output: 0, demand: 8 }, water: { output: 0, demand: 0 }, pollution: 0, coverage: 12, sprite: "police" },
-  [Build.Fire]: { id: Build.Fire, kind: "building", name: "Fire Station", footprint: { w: 1, h: 1 }, cost: 500, maintenance: 100, power: { output: 0, demand: 8 }, water: { output: 0, demand: 0 }, pollution: 0, coverage: 12, sprite: "fire" },
-  [Build.Park]: { id: Build.Park, kind: "building", name: "Park", footprint: { w: 1, h: 1 }, cost: 150, maintenance: 5, power: { output: 0, demand: 0 }, water: { output: 0, demand: 0 }, pollution: 0, coverage: 5, sprite: "park" },
+  [Build.CoalPlant]: { id: Build.CoalPlant, kind: "building", name: "Coal Power Plant", footprint: { w: 1, h: 1 }, cost: 4000, maintenance: 100, power: { output: 2000, demand: 0 }, water: { output: 0, demand: 0 }, pollution: 60, coverage: 0, sprite: "coal_plant", unlockYear: 1900 },
+  [Build.GasPlant]: { id: Build.GasPlant, kind: "building", name: "Gas Turbine", footprint: { w: 1, h: 1 }, cost: 2000, maintenance: 50, power: { output: 500, demand: 0 }, water: { output: 0, demand: 0 }, pollution: 18, coverage: 0, sprite: "gas_plant", unlockYear: 1900 },
+
+  // SimCity 2000 power-plant catalogue. SC2K rates plants in MW (Coal 200, Gas 50, Hydro
+  // 20, Solar 50, Nuclear 500, Wind 4, Microwave 1600); our existing Coal/Gas already use
+  // those values scaled ~x10 (Coal 2000, Gas 500), so every new plant below keeps the same
+  // x10 scaling for a balanced, comparable catalogue. Cost/maintenance/pollution and the
+  // unlock years are likewise modelled on SC2K: hydro is cheap & clean but tiny, nuclear is
+  // expensive & high-yield with residual pollution, wind/solar are clean renewables gated
+  // behind their historical introduction, and microwave is a late-game high-yield plant.
+  // Source of inspiration: SimCity 2000 (Maxis, 1993) power-plant table.
+  [Build.HydroPlant]: { id: Build.HydroPlant, kind: "building", name: "Hydroelectric Plant", footprint: { w: 1, h: 1 }, cost: 800, maintenance: 20, power: { output: 200, demand: 0 }, water: { output: 0, demand: 0 }, pollution: 0, coverage: 0, sprite: "hydro_plant", unlockYear: 1900 },
+  [Build.WindTurbine]: { id: Build.WindTurbine, kind: "building", name: "Wind Turbine", footprint: { w: 1, h: 1 }, cost: 300, maintenance: 10, power: { output: 50, demand: 0 }, water: { output: 0, demand: 0 }, pollution: 0, coverage: 0, sprite: "wind_turbine", unlockYear: 1980 },
+  [Build.SolarPlant]: { id: Build.SolarPlant, kind: "building", name: "Solar Power Plant", footprint: { w: 1, h: 1 }, cost: 2400, maintenance: 40, power: { output: 500, demand: 0 }, water: { output: 0, demand: 0 }, pollution: 0, coverage: 0, sprite: "solar_plant", unlockYear: 1990 },
+  [Build.NuclearPlant]: { id: Build.NuclearPlant, kind: "building", name: "Nuclear Power Plant", footprint: { w: 1, h: 1 }, cost: 15000, maintenance: 200, power: { output: 5000, demand: 0 }, water: { output: 0, demand: 0 }, pollution: 10, coverage: 0, sprite: "nuclear_plant", unlockYear: 1955 },
+  [Build.MicrowavePlant]: { id: Build.MicrowavePlant, kind: "building", name: "Microwave Power Plant", footprint: { w: 1, h: 1 }, cost: 28000, maintenance: 300, power: { output: 16000, demand: 0 }, water: { output: 0, demand: 0 }, pollution: 5, coverage: 0, sprite: "microwave_plant", unlockYear: 2020 },
 
   // Water sources (mirror the power plants, but supply the underground pipe network).
   [Build.Pump]: { id: Build.Pump, kind: "building", name: "Water Pump", footprint: { w: 1, h: 1 }, cost: 600, maintenance: 30, power: { output: 0, demand: 0 }, water: { output: 800, demand: 0 }, pollution: 0, coverage: 0, sprite: "water_pump" },
   [Build.WaterTower]: { id: Build.WaterTower, kind: "building", name: "Water Tower", footprint: { w: 1, h: 1 }, cost: 1500, maintenance: 40, power: { output: 0, demand: 0 }, water: { output: 1200, demand: 0 }, pollution: 0, coverage: 0, sprite: "water_tower" },
   [Build.Treatment]: { id: Build.Treatment, kind: "building", name: "Water Treatment", footprint: { w: 1, h: 1 }, cost: 3000, maintenance: 80, power: { output: 0, demand: 0 }, water: { output: 2400, demand: 0 }, pollution: 0, coverage: 0, sprite: "water_treatment" },
+
+  [Build.Police]: { id: Build.Police, kind: "building", name: "Police Station", footprint: { w: 1, h: 1 }, cost: 500, maintenance: 100, power: { output: 0, demand: 8 }, water: { output: 0, demand: 0 }, pollution: 0, coverage: 12, sprite: "police" },
+  [Build.Fire]: { id: Build.Fire, kind: "building", name: "Fire Station", footprint: { w: 1, h: 1 }, cost: 500, maintenance: 100, power: { output: 0, demand: 8 }, water: { output: 0, demand: 0 }, pollution: 0, coverage: 12, sprite: "fire" },
+  [Build.Park]: { id: Build.Park, kind: "building", name: "Park", footprint: { w: 1, h: 1 }, cost: 150, maintenance: 5, power: { output: 0, demand: 0 }, water: { output: 0, demand: 0 }, pollution: 0, coverage: 5, sprite: "park" },
 
   // Zones. Placement cost mirrors commands' COST_ZONE; growth-driven power/occupancy is
   // tracked per stage in ZONE_GROWTH below, so the base power demand here is 0.
@@ -133,6 +157,11 @@ const STRUCTURE_KIND: Record<BuildType, StructureDef["kind"]> = {
   [Build.Police]: "service",
   [Build.Fire]: "service",
   [Build.Park]: "amenity",
+  [Build.HydroPlant]: "power",
+  [Build.WindTurbine]: "power",
+  [Build.SolarPlant]: "power",
+  [Build.NuclearPlant]: "power",
+  [Build.MicrowavePlant]: "power",
   [Build.Pump]: "water",
   [Build.WaterTower]: "water",
   [Build.Treatment]: "water",
@@ -162,6 +191,11 @@ export const STRUCTURES: Record<BuildType, StructureDef> = {
   [Build.Police]: toStructure(Build.Police),
   [Build.Fire]: toStructure(Build.Fire),
   [Build.Park]: toStructure(Build.Park),
+  [Build.HydroPlant]: toStructure(Build.HydroPlant),
+  [Build.WindTurbine]: toStructure(Build.WindTurbine),
+  [Build.SolarPlant]: toStructure(Build.SolarPlant),
+  [Build.NuclearPlant]: toStructure(Build.NuclearPlant),
+  [Build.MicrowavePlant]: toStructure(Build.MicrowavePlant),
   [Build.Pump]: toStructure(Build.Pump),
   [Build.WaterTower]: toStructure(Build.WaterTower),
   [Build.Treatment]: toStructure(Build.Treatment),
@@ -195,4 +229,27 @@ export function tilePowerDemand(zone: number, stage: number): number {
 export function tileWaterDemand(zone: number, stage: number): number {
   const z = zoneCapacity(zone);
   return z ? stage * z.waterPerStage : 0;
+}
+
+// True if a building byte is a power plant (any building that supplies power). Registry-
+// driven so the PowerSystem flood seeds from every plant without hard-coding ids.
+export function isPowerPlant(id: number): boolean {
+  const t = TILES[id];
+  return t?.kind === "building" && t.power.output > 0;
+}
+
+// True if a building byte is a water source (any building that supplies water). Registry-
+// driven so the WaterSystem flood seeds from every source without hard-coding ids.
+export function isWaterSource(id: number): boolean {
+  const t = TILES[id];
+  return t?.kind === "building" && t.water.output > 0;
+}
+
+// Buildings the player may place in the given calendar year. A building is available when
+// it has no unlockYear gate, or the gate year has been reached. The empty `None` tile is
+// excluded. Pair with calendar(tick).year to drive the build palette.
+export function availableBuildings(year: number): TileDef[] {
+  return Object.values(TILES).filter(
+    (t) => t.kind === "building" && t.id !== Build.None && (t.unlockYear === undefined || year >= t.unlockYear),
+  );
 }

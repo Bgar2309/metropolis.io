@@ -22,6 +22,26 @@ function hasRoadNear(world: World, x: number, y: number): boolean {
   return false;
 }
 
+// Congestion (0..1) of the roads serving a tile: the busiest nearby road's traffic level
+// normalised to 0..1. TrafficSystem fills world.traffic each tick, so a saturated
+// corridor reads ~1 here and strongly discourages the lots it serves from developing.
+function roadCongestion(world: World, x: number, y: number): number {
+  let maxT = 0;
+  for (let dy = -ROAD_REACH; dy <= ROAD_REACH; dy++) {
+    for (let dx = -ROAD_REACH; dx <= ROAD_REACH; dx++) {
+      const nx = x + dx;
+      const ny = y + dy;
+      if (nx < 0 || ny < 0 || nx >= world.width || ny >= world.height) continue;
+      const ni = ny * world.width + nx;
+      if (world.net[ni]! & Net.Road) {
+        const t = world.traffic[ni]!;
+        if (t > maxT) maxT = t;
+      }
+    }
+  }
+  return maxT / 255;
+}
+
 export class GrowthSystem implements SimPass {
   readonly name = "growth";
 
@@ -45,6 +65,9 @@ export class GrowthSystem implements SimPass {
         if (!road) score -= 0.6;
         if (!powered) score -= 1.0;
         if (!watered) score -= 1.0;
+        // Congested access roads choke growth: a fully saturated corridor wipes out most
+        // of a lot's desirability, so traffic the city can't carry stalls development.
+        score -= roadCongestion(world, x, y) * 0.8;
 
         const stage = world.stage[i]!;
         if (score > 0.1 && stage < z.maxStage) {

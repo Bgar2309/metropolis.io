@@ -7,7 +7,7 @@
 
 import type { SimPass, SimContext } from "../engine.js";
 import { Under } from "../constants.js";
-import { Build, getStructure, tileWaterDemand } from "../buildings.js";
+import { Build, getStructure, tileWaterDemand, isWaterSource } from "../buildings.js";
 
 export class WaterSystem implements SimPass {
   readonly name = "water";
@@ -26,7 +26,7 @@ export class WaterSystem implements SimPass {
     // Seed BFS from every water-source tile.
     for (let i = 0; i < size; i++) {
       const b = world.building[i]!;
-      if (b === Build.Pump || b === Build.WaterTower || b === Build.Treatment) {
+      if (isWaterSource(b)) {
         supply += getStructure(b).waterOutput;
         if (!visited[i]) {
           visited[i] = 1;

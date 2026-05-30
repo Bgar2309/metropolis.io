@@ -6,7 +6,7 @@
 
 import type { SimPass, SimContext } from "../engine.js";
 import { Net } from "../constants.js";
-import { Build, getStructure, tilePowerDemand } from "../buildings.js";
+import { Build, getStructure, isPowerPlant, tilePowerDemand } from "../buildings.js";
 
 export class PowerSystem implements SimPass {
   readonly name = "power";
@@ -25,7 +25,7 @@ export class PowerSystem implements SimPass {
     // Seed BFS from every plant tile.
     for (let i = 0; i < size; i++) {
       const b = world.building[i]!;
-      if (b === Build.CoalPlant || b === Build.GasPlant) {
+      if (isPowerPlant(b)) {
         supply += getStructure(b).powerOutput;
         if (!visited[i]) {
           visited[i] = 1;
