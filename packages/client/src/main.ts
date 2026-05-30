@@ -48,6 +48,7 @@ const OVERLAYS: { label: string; kind: OverlayKind }[] = [
   { label: "Land Value", kind: "landvalue" },
   { label: "Pollution", kind: "pollution" },
   { label: "Crime", kind: "crime" },
+  { label: "Traffic", kind: "traffic" },
   { label: "Power", kind: "power" },
   { label: "Police", kind: "police" },
   { label: "Fire", kind: "fire" },
