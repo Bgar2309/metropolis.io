@@ -1,0 +1,15 @@
+{
+  "frames": {},
+  "meta": {
+    "app": "metropolis.io build-atlas",
+    "size": {
+      "w": 1,
+      "h": 1
+    },
+    "count": 0,
+    "tile": {
+      "w": 32,
+      "h": 16
+    }
+  }
+}
