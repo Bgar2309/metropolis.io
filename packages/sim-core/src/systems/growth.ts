@@ -57,12 +57,14 @@ export class GrowthSystem implements SimPass {
           z.cat === "R" ? world.stats.rDemand : z.cat === "C" ? world.stats.cDemand : world.stats.iDemand;
         const lv = world.landValue[i]! / 255;
         const powered = world.power[i]! === 1;
+        const watered = world.water[i]! === 1;
         const road = hasRoadNear(world, x, y);
 
         let score = demand * 0.6 + (lv - 0.35);
         if (z.cat !== "I") score -= (world.pollution[i]! / 255) * 0.5;
         if (!road) score -= 0.6;
         if (!powered) score -= 1.0;
+        if (!watered) score -= 1.0;
         // Congested access roads choke growth: a fully saturated corridor wipes out most
         // of a lot's desirability, so traffic the city can't carry stalls development.
         score -= roadCongestion(world, x, y) * 0.8;

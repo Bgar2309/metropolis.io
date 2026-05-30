@@ -35,6 +35,9 @@ export interface WorldStats {
   powerSupply: number;
   powerDemand: number;
   brownout: boolean;
+  waterSupply: number;
+  waterDemand: number;
+  drought: boolean;
   lastIncome: number; // last monthly budget cycle
   lastExpense: number;
 }
@@ -122,6 +125,9 @@ export class World {
       powerSupply: 0,
       powerDemand: 0,
       brownout: false,
+      waterSupply: 0,
+      waterDemand: 0,
+      drought: false,
       lastIncome: 0,
       lastExpense: 0,
     };

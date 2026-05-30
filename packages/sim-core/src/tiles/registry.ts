@@ -15,7 +15,7 @@ export interface TileDef {
   cost: number;
   maintenance: number; // $/month at 100% funding
   power: { output: number; demand: number }; // units supplied / consumed
-  water: { demand: number }; // 0 everywhere for now (water sim is Phase 2)
+  water: { output: number; demand: number }; // units supplied / consumed (Phase 2 water sim)
   pollution: number; // emitted at the source tile
   coverage: number; // effect radius in tiles (services/amenities)
   sprite: string; // atlas key (logical name)
@@ -24,7 +24,7 @@ export interface TileDef {
 }
 
 // --- id namespaces -------------------------------------------------------------------
-// Buildings keep their legacy Build byte (0-5) so World.building bytes map straight to a
+// Buildings keep their legacy Build byte (0+) so World.building bytes map straight to a
 // tile id. Zones and nets live in separate high ranges so the three layers never collide
 // inside the single TILES map.
 export const Build = {
@@ -34,13 +34,17 @@ export const Build = {
   Police: 3,
   Fire: 4,
   Park: 5,
-  // SimCity 2000-inspired power plants (ids 6+). These extend the original coal/gas pair
+  // SimCity 2000-inspired power plants (ids 6-10). These extend the original coal/gas pair
   // so the byte stored in World.building still maps straight to a tile id.
   HydroPlant: 6,
   WindTurbine: 7,
   SolarPlant: 8,
   NuclearPlant: 9,
   MicrowavePlant: 10,
+  // Water sources (ids 11+): the underground-pipe analog of the power plants.
+  Pump: 11,
+  WaterTower: 12,
+  Treatment: 13,
 } as const;
 export type BuildType = (typeof Build)[keyof typeof Build];
 
@@ -53,9 +57,9 @@ const netTileId = (bit: number): number => NET_ID_BASE + bit;
 // --- the registry --------------------------------------------------------------------
 export const TILES: Record<number, TileDef> = {
   // Buildings (values identical to the former STRUCTURES table).
-  [Build.None]: { id: Build.None, kind: "building", name: "—", footprint: { w: 1, h: 1 }, cost: 0, maintenance: 0, power: { output: 0, demand: 0 }, water: { demand: 0 }, pollution: 0, coverage: 0, sprite: "none" },
-  [Build.CoalPlant]: { id: Build.CoalPlant, kind: "building", name: "Coal Power Plant", footprint: { w: 1, h: 1 }, cost: 4000, maintenance: 100, power: { output: 2000, demand: 0 }, water: { demand: 0 }, pollution: 60, coverage: 0, sprite: "coal_plant", unlockYear: 1900 },
-  [Build.GasPlant]: { id: Build.GasPlant, kind: "building", name: "Gas Turbine", footprint: { w: 1, h: 1 }, cost: 2000, maintenance: 50, power: { output: 500, demand: 0 }, water: { demand: 0 }, pollution: 18, coverage: 0, sprite: "gas_plant", unlockYear: 1900 },
+  [Build.None]: { id: Build.None, kind: "building", name: "—", footprint: { w: 1, h: 1 }, cost: 0, maintenance: 0, power: { output: 0, demand: 0 }, water: { output: 0, demand: 0 }, pollution: 0, coverage: 0, sprite: "none" },
+  [Build.CoalPlant]: { id: Build.CoalPlant, kind: "building", name: "Coal Power Plant", footprint: { w: 1, h: 1 }, cost: 4000, maintenance: 100, power: { output: 2000, demand: 0 }, water: { output: 0, demand: 0 }, pollution: 60, coverage: 0, sprite: "coal_plant", unlockYear: 1900 },
+  [Build.GasPlant]: { id: Build.GasPlant, kind: "building", name: "Gas Turbine", footprint: { w: 1, h: 1 }, cost: 2000, maintenance: 50, power: { output: 500, demand: 0 }, water: { output: 0, demand: 0 }, pollution: 18, coverage: 0, sprite: "gas_plant", unlockYear: 1900 },
 
   // SimCity 2000 power-plant catalogue. SC2K rates plants in MW (Coal 200, Gas 50, Hydro
   // 20, Solar 50, Nuclear 500, Wind 4, Microwave 1600); our existing Coal/Gas already use
@@ -65,29 +69,34 @@ export const TILES: Record<number, TileDef> = {
   // expensive & high-yield with residual pollution, wind/solar are clean renewables gated
   // behind their historical introduction, and microwave is a late-game high-yield plant.
   // Source of inspiration: SimCity 2000 (Maxis, 1993) power-plant table.
-  [Build.HydroPlant]: { id: Build.HydroPlant, kind: "building", name: "Hydroelectric Plant", footprint: { w: 1, h: 1 }, cost: 800, maintenance: 20, power: { output: 200, demand: 0 }, water: { demand: 0 }, pollution: 0, coverage: 0, sprite: "hydro_plant", unlockYear: 1900 },
-  [Build.WindTurbine]: { id: Build.WindTurbine, kind: "building", name: "Wind Turbine", footprint: { w: 1, h: 1 }, cost: 300, maintenance: 10, power: { output: 50, demand: 0 }, water: { demand: 0 }, pollution: 0, coverage: 0, sprite: "wind_turbine", unlockYear: 1980 },
-  [Build.SolarPlant]: { id: Build.SolarPlant, kind: "building", name: "Solar Power Plant", footprint: { w: 1, h: 1 }, cost: 2400, maintenance: 40, power: { output: 500, demand: 0 }, water: { demand: 0 }, pollution: 0, coverage: 0, sprite: "solar_plant", unlockYear: 1990 },
-  [Build.NuclearPlant]: { id: Build.NuclearPlant, kind: "building", name: "Nuclear Power Plant", footprint: { w: 1, h: 1 }, cost: 15000, maintenance: 200, power: { output: 5000, demand: 0 }, water: { demand: 0 }, pollution: 10, coverage: 0, sprite: "nuclear_plant", unlockYear: 1955 },
-  [Build.MicrowavePlant]: { id: Build.MicrowavePlant, kind: "building", name: "Microwave Power Plant", footprint: { w: 1, h: 1 }, cost: 28000, maintenance: 300, power: { output: 16000, demand: 0 }, water: { demand: 0 }, pollution: 5, coverage: 0, sprite: "microwave_plant", unlockYear: 2020 },
+  [Build.HydroPlant]: { id: Build.HydroPlant, kind: "building", name: "Hydroelectric Plant", footprint: { w: 1, h: 1 }, cost: 800, maintenance: 20, power: { output: 200, demand: 0 }, water: { output: 0, demand: 0 }, pollution: 0, coverage: 0, sprite: "hydro_plant", unlockYear: 1900 },
+  [Build.WindTurbine]: { id: Build.WindTurbine, kind: "building", name: "Wind Turbine", footprint: { w: 1, h: 1 }, cost: 300, maintenance: 10, power: { output: 50, demand: 0 }, water: { output: 0, demand: 0 }, pollution: 0, coverage: 0, sprite: "wind_turbine", unlockYear: 1980 },
+  [Build.SolarPlant]: { id: Build.SolarPlant, kind: "building", name: "Solar Power Plant", footprint: { w: 1, h: 1 }, cost: 2400, maintenance: 40, power: { output: 500, demand: 0 }, water: { output: 0, demand: 0 }, pollution: 0, coverage: 0, sprite: "solar_plant", unlockYear: 1990 },
+  [Build.NuclearPlant]: { id: Build.NuclearPlant, kind: "building", name: "Nuclear Power Plant", footprint: { w: 1, h: 1 }, cost: 15000, maintenance: 200, power: { output: 5000, demand: 0 }, water: { output: 0, demand: 0 }, pollution: 10, coverage: 0, sprite: "nuclear_plant", unlockYear: 1955 },
+  [Build.MicrowavePlant]: { id: Build.MicrowavePlant, kind: "building", name: "Microwave Power Plant", footprint: { w: 1, h: 1 }, cost: 28000, maintenance: 300, power: { output: 16000, demand: 0 }, water: { output: 0, demand: 0 }, pollution: 5, coverage: 0, sprite: "microwave_plant", unlockYear: 2020 },
 
-  [Build.Police]: { id: Build.Police, kind: "building", name: "Police Station", footprint: { w: 1, h: 1 }, cost: 500, maintenance: 100, power: { output: 0, demand: 8 }, water: { demand: 0 }, pollution: 0, coverage: 12, sprite: "police" },
-  [Build.Fire]: { id: Build.Fire, kind: "building", name: "Fire Station", footprint: { w: 1, h: 1 }, cost: 500, maintenance: 100, power: { output: 0, demand: 8 }, water: { demand: 0 }, pollution: 0, coverage: 12, sprite: "fire" },
-  [Build.Park]: { id: Build.Park, kind: "building", name: "Park", footprint: { w: 1, h: 1 }, cost: 150, maintenance: 5, power: { output: 0, demand: 0 }, water: { demand: 0 }, pollution: 0, coverage: 5, sprite: "park" },
+  // Water sources (mirror the power plants, but supply the underground pipe network).
+  [Build.Pump]: { id: Build.Pump, kind: "building", name: "Water Pump", footprint: { w: 1, h: 1 }, cost: 600, maintenance: 30, power: { output: 0, demand: 0 }, water: { output: 800, demand: 0 }, pollution: 0, coverage: 0, sprite: "water_pump" },
+  [Build.WaterTower]: { id: Build.WaterTower, kind: "building", name: "Water Tower", footprint: { w: 1, h: 1 }, cost: 1500, maintenance: 40, power: { output: 0, demand: 0 }, water: { output: 1200, demand: 0 }, pollution: 0, coverage: 0, sprite: "water_tower" },
+  [Build.Treatment]: { id: Build.Treatment, kind: "building", name: "Water Treatment", footprint: { w: 1, h: 1 }, cost: 3000, maintenance: 80, power: { output: 0, demand: 0 }, water: { output: 2400, demand: 0 }, pollution: 0, coverage: 0, sprite: "water_treatment" },
+
+  [Build.Police]: { id: Build.Police, kind: "building", name: "Police Station", footprint: { w: 1, h: 1 }, cost: 500, maintenance: 100, power: { output: 0, demand: 8 }, water: { output: 0, demand: 0 }, pollution: 0, coverage: 12, sprite: "police" },
+  [Build.Fire]: { id: Build.Fire, kind: "building", name: "Fire Station", footprint: { w: 1, h: 1 }, cost: 500, maintenance: 100, power: { output: 0, demand: 8 }, water: { output: 0, demand: 0 }, pollution: 0, coverage: 12, sprite: "fire" },
+  [Build.Park]: { id: Build.Park, kind: "building", name: "Park", footprint: { w: 1, h: 1 }, cost: 150, maintenance: 5, power: { output: 0, demand: 0 }, water: { output: 0, demand: 0 }, pollution: 0, coverage: 5, sprite: "park" },
 
   // Zones. Placement cost mirrors commands' COST_ZONE; growth-driven power/occupancy is
   // tracked per stage in ZONE_GROWTH below, so the base power demand here is 0.
-  [zoneTileId(Zone.ResLight)]: { id: zoneTileId(Zone.ResLight), kind: "zone", name: "Light Residential", footprint: { w: 1, h: 1 }, cost: 10, maintenance: 0, power: { output: 0, demand: 0 }, water: { demand: 0 }, pollution: 0, coverage: 0, sprite: "zone_res_light" },
-  [zoneTileId(Zone.ResDense)]: { id: zoneTileId(Zone.ResDense), kind: "zone", name: "Dense Residential", footprint: { w: 1, h: 1 }, cost: 10, maintenance: 0, power: { output: 0, demand: 0 }, water: { demand: 0 }, pollution: 0, coverage: 0, sprite: "zone_res_dense" },
-  [zoneTileId(Zone.ComLight)]: { id: zoneTileId(Zone.ComLight), kind: "zone", name: "Light Commercial", footprint: { w: 1, h: 1 }, cost: 10, maintenance: 0, power: { output: 0, demand: 0 }, water: { demand: 0 }, pollution: 0, coverage: 0, sprite: "zone_com_light" },
-  [zoneTileId(Zone.ComDense)]: { id: zoneTileId(Zone.ComDense), kind: "zone", name: "Dense Commercial", footprint: { w: 1, h: 1 }, cost: 10, maintenance: 0, power: { output: 0, demand: 0 }, water: { demand: 0 }, pollution: 0, coverage: 0, sprite: "zone_com_dense" },
-  [zoneTileId(Zone.IndLight)]: { id: zoneTileId(Zone.IndLight), kind: "zone", name: "Light Industrial", footprint: { w: 1, h: 1 }, cost: 10, maintenance: 0, power: { output: 0, demand: 0 }, water: { demand: 0 }, pollution: 0, coverage: 0, sprite: "zone_ind_light" },
-  [zoneTileId(Zone.IndDense)]: { id: zoneTileId(Zone.IndDense), kind: "zone", name: "Dense Industrial", footprint: { w: 1, h: 1 }, cost: 10, maintenance: 0, power: { output: 0, demand: 0 }, water: { demand: 0 }, pollution: 0, coverage: 0, sprite: "zone_ind_dense" },
+  [zoneTileId(Zone.ResLight)]: { id: zoneTileId(Zone.ResLight), kind: "zone", name: "Light Residential", footprint: { w: 1, h: 1 }, cost: 10, maintenance: 0, power: { output: 0, demand: 0 }, water: { output: 0, demand: 0 }, pollution: 0, coverage: 0, sprite: "zone_res_light" },
+  [zoneTileId(Zone.ResDense)]: { id: zoneTileId(Zone.ResDense), kind: "zone", name: "Dense Residential", footprint: { w: 1, h: 1 }, cost: 10, maintenance: 0, power: { output: 0, demand: 0 }, water: { output: 0, demand: 0 }, pollution: 0, coverage: 0, sprite: "zone_res_dense" },
+  [zoneTileId(Zone.ComLight)]: { id: zoneTileId(Zone.ComLight), kind: "zone", name: "Light Commercial", footprint: { w: 1, h: 1 }, cost: 10, maintenance: 0, power: { output: 0, demand: 0 }, water: { output: 0, demand: 0 }, pollution: 0, coverage: 0, sprite: "zone_com_light" },
+  [zoneTileId(Zone.ComDense)]: { id: zoneTileId(Zone.ComDense), kind: "zone", name: "Dense Commercial", footprint: { w: 1, h: 1 }, cost: 10, maintenance: 0, power: { output: 0, demand: 0 }, water: { output: 0, demand: 0 }, pollution: 0, coverage: 0, sprite: "zone_com_dense" },
+  [zoneTileId(Zone.IndLight)]: { id: zoneTileId(Zone.IndLight), kind: "zone", name: "Light Industrial", footprint: { w: 1, h: 1 }, cost: 10, maintenance: 0, power: { output: 0, demand: 0 }, water: { output: 0, demand: 0 }, pollution: 0, coverage: 0, sprite: "zone_ind_light" },
+  [zoneTileId(Zone.IndDense)]: { id: zoneTileId(Zone.IndDense), kind: "zone", name: "Dense Industrial", footprint: { w: 1, h: 1 }, cost: 10, maintenance: 0, power: { output: 0, demand: 0 }, water: { output: 0, demand: 0 }, pollution: 0, coverage: 0, sprite: "zone_ind_dense" },
 
   // Surface networks. Costs mirror commands' COST_ROAD / COST_POWERLINE.
-  [netTileId(Net.Road)]: { id: netTileId(Net.Road), kind: "net", name: "Road", footprint: { w: 1, h: 1 }, cost: 10, maintenance: 0, power: { output: 0, demand: 0 }, water: { demand: 0 }, pollution: 0, coverage: 0, sprite: "road" },
-  [netTileId(Net.Rail)]: { id: netTileId(Net.Rail), kind: "net", name: "Rail", footprint: { w: 1, h: 1 }, cost: 20, maintenance: 0, power: { output: 0, demand: 0 }, water: { demand: 0 }, pollution: 0, coverage: 0, sprite: "rail" },
-  [netTileId(Net.PowerLine)]: { id: netTileId(Net.PowerLine), kind: "net", name: "Power Line", footprint: { w: 1, h: 1 }, cost: 5, maintenance: 0, power: { output: 0, demand: 0 }, water: { demand: 0 }, pollution: 0, coverage: 0, sprite: "power_line" },
+  [netTileId(Net.Road)]: { id: netTileId(Net.Road), kind: "net", name: "Road", footprint: { w: 1, h: 1 }, cost: 10, maintenance: 0, power: { output: 0, demand: 0 }, water: { output: 0, demand: 0 }, pollution: 0, coverage: 0, sprite: "road" },
+  [netTileId(Net.Rail)]: { id: netTileId(Net.Rail), kind: "net", name: "Rail", footprint: { w: 1, h: 1 }, cost: 20, maintenance: 0, power: { output: 0, demand: 0 }, water: { output: 0, demand: 0 }, pollution: 0, coverage: 0, sprite: "rail" },
+  [netTileId(Net.PowerLine)]: { id: netTileId(Net.PowerLine), kind: "net", name: "Power Line", footprint: { w: 1, h: 1 }, cost: 5, maintenance: 0, power: { output: 0, demand: 0 }, water: { output: 0, demand: 0 }, pollution: 0, coverage: 0, sprite: "power_line" },
 };
 
 // Lookup a tile by id. Undefined for unknown ids (callers decide on a fallback).
@@ -101,39 +110,42 @@ export function tilesByCategory(cat: TileDef["kind"]): TileDef[] {
 }
 
 // --- zone growth metadata ------------------------------------------------------------
-// Per-stage residents/jobs and power demand for auto-developing zones. This lives next to
-// the registry (rather than in TileDef) because it describes growth dynamics, not a fixed
-// tile property; values are identical to the former ZONE_CAP table.
+// Per-stage residents/jobs and power/water demand for auto-developing zones. This lives
+// next to the registry (rather than in TileDef) because it describes growth dynamics, not
+// a fixed tile property; values are identical to the former ZONE_CAP table.
 export interface ZoneCapacity {
   cat: "R" | "C" | "I";
   dense: boolean;
   maxStage: number; // top growth stage
   capPerStage: number; // residents (R) or jobs (C/I) added per stage
   powerPerStage: number; // power units demanded per stage
+  waterPerStage: number; // water units demanded per stage
 }
 
 const ZONE_GROWTH: Record<number, ZoneCapacity> = {
-  [zoneTileId(Zone.ResLight)]: { cat: "R", dense: false, maxStage: 4, capPerStage: 16, powerPerStage: 4 },
-  [zoneTileId(Zone.ResDense)]: { cat: "R", dense: true, maxStage: 8, capPerStage: 40, powerPerStage: 6 },
-  [zoneTileId(Zone.ComLight)]: { cat: "C", dense: false, maxStage: 4, capPerStage: 12, powerPerStage: 5 },
-  [zoneTileId(Zone.ComDense)]: { cat: "C", dense: true, maxStage: 8, capPerStage: 30, powerPerStage: 8 },
-  [zoneTileId(Zone.IndLight)]: { cat: "I", dense: false, maxStage: 4, capPerStage: 14, powerPerStage: 6 },
-  [zoneTileId(Zone.IndDense)]: { cat: "I", dense: true, maxStage: 8, capPerStage: 35, powerPerStage: 10 },
+  [zoneTileId(Zone.ResLight)]: { cat: "R", dense: false, maxStage: 4, capPerStage: 16, powerPerStage: 4, waterPerStage: 3 },
+  [zoneTileId(Zone.ResDense)]: { cat: "R", dense: true, maxStage: 8, capPerStage: 40, powerPerStage: 6, waterPerStage: 5 },
+  [zoneTileId(Zone.ComLight)]: { cat: "C", dense: false, maxStage: 4, capPerStage: 12, powerPerStage: 5, waterPerStage: 4 },
+  [zoneTileId(Zone.ComDense)]: { cat: "C", dense: true, maxStage: 8, capPerStage: 30, powerPerStage: 8, waterPerStage: 6 },
+  [zoneTileId(Zone.IndLight)]: { cat: "I", dense: false, maxStage: 4, capPerStage: 14, powerPerStage: 6, waterPerStage: 5 },
+  [zoneTileId(Zone.IndDense)]: { cat: "I", dense: true, maxStage: 8, capPerStage: 35, powerPerStage: 10, waterPerStage: 8 },
 };
 
 // --- legacy structure view -----------------------------------------------------------
 // The pre-registry StructureDef shape, kept so existing callers (commands, budget, power,
-// fields) keep compiling. It is a flattened projection of the building TileDefs plus the
-// old service/power/amenity categorisation, which is purely a building classification and
-// has no place on the unified TileDef.
+// water, fields) keep compiling. It is a flattened projection of the building TileDefs plus
+// the old service/power/amenity categorisation, which is purely a building classification
+// and has no place on the unified TileDef.
 export interface StructureDef {
   id: BuildType;
   name: string;
-  kind: "power" | "service" | "amenity";
+  kind: "power" | "water" | "service" | "amenity";
   cost: number;
   maintenance: number;
   powerOutput: number;
   powerDemand: number;
+  waterOutput: number;
+  waterDemand: number;
   pollution: number;
   coverage: number;
 }
@@ -150,6 +162,9 @@ const STRUCTURE_KIND: Record<BuildType, StructureDef["kind"]> = {
   [Build.SolarPlant]: "power",
   [Build.NuclearPlant]: "power",
   [Build.MicrowavePlant]: "power",
+  [Build.Pump]: "water",
+  [Build.WaterTower]: "water",
+  [Build.Treatment]: "water",
 };
 
 function toStructure(id: BuildType): StructureDef {
@@ -162,6 +177,8 @@ function toStructure(id: BuildType): StructureDef {
     maintenance: t.maintenance,
     powerOutput: t.power.output,
     powerDemand: t.power.demand,
+    waterOutput: t.water.output,
+    waterDemand: t.water.demand,
     pollution: t.pollution,
     coverage: t.coverage,
   };
@@ -179,6 +196,9 @@ export const STRUCTURES: Record<BuildType, StructureDef> = {
   [Build.SolarPlant]: toStructure(Build.SolarPlant),
   [Build.NuclearPlant]: toStructure(Build.NuclearPlant),
   [Build.MicrowavePlant]: toStructure(Build.MicrowavePlant),
+  [Build.Pump]: toStructure(Build.Pump),
+  [Build.WaterTower]: toStructure(Build.WaterTower),
+  [Build.Treatment]: toStructure(Build.Treatment),
 };
 
 // --- compatibility helpers (now backed by the registry) ------------------------------
@@ -205,11 +225,24 @@ export function tilePowerDemand(zone: number, stage: number): number {
   return z ? stage * z.powerPerStage : 0;
 }
 
+// Water demanded by a developed zone tile this tick.
+export function tileWaterDemand(zone: number, stage: number): number {
+  const z = zoneCapacity(zone);
+  return z ? stage * z.waterPerStage : 0;
+}
+
 // True if a building byte is a power plant (any building that supplies power). Registry-
 // driven so the PowerSystem flood seeds from every plant without hard-coding ids.
 export function isPowerPlant(id: number): boolean {
   const t = TILES[id];
   return t?.kind === "building" && t.power.output > 0;
+}
+
+// True if a building byte is a water source (any building that supplies water). Registry-
+// driven so the WaterSystem flood seeds from every source without hard-coding ids.
+export function isWaterSource(id: number): boolean {
+  const t = TILES[id];
+  return t?.kind === "building" && t.water.output > 0;
 }
 
 // Buildings the player may place in the given calendar year. A building is available when

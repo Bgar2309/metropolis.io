@@ -67,6 +67,7 @@ function growableLot(seed: number, roadTraffic: number): { world: World; lot: nu
   world.zone[lot] = Zone.ResLight;
   world.stage[lot] = 0;
   world.power[lot] = 1;
+  world.water[lot] = 1; // sated on power and water, so this test isolates congestion
   world.landValue[lot] = 120;
 
   // Surround the lot with roads carrying the requested traffic level.
