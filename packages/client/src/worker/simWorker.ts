@@ -50,6 +50,8 @@ function overlayFieldOf(world: World): Uint8Array | null {
       return world.pollution;
     case "crime":
       return world.crime;
+    case "traffic":
+      return world.traffic;
     case "power":
       return world.power;
     case "police":

@@ -8,6 +8,7 @@ export type OverlayKind =
   | "landvalue"
   | "pollution"
   | "crime"
+  | "traffic"
   | "power"
   | "police"
   | "fire";
