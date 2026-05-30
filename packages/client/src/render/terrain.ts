@@ -40,6 +40,14 @@ const SEA_LEVEL = 4; // mirrors sim-core constants; tiles with alt <= SEA_LEVEL 
 const FOAM_COLOR = 0xe6dcae; // bright wet sand at the waterline
 const SAND_COLOR = 0xcdbf8a; // drier sand just inland of the foam
 
+// Topographic ramp: the generator keeps land in roughly [SEA_LEVEL..LAND_PEAK], so we
+// normalise altitude over that span and lift the ground colour from its base hue toward a
+// dry, rocky highland and finally snow on the peaks. Low ground stays in its base colour so
+// grass/forest remain recognisable — only the heights turn brown and white-capped.
+const LAND_PEAK = 15; // mirrors generateTerrain()'s `round(h*14)+1` cap
+const HIGHLAND_COLOR = 0x8a7a55; // dry rock/scrub of the highlands
+const SNOW_COLOR = 0xeaf0f4; // peak snow
+
 // Water shimmer endpoints — kept close to TERRAIN_COLOR[Water] so the motion is subtle.
 const WATER_DEEP = 0x29618f;
 const WATER_BRIGHT = 0x3f86b3;
@@ -66,6 +74,25 @@ function lerpColor(a: number, b: number, t: number): number {
   const g = Math.round(ag + (bg - ag) * t);
   const bl = Math.round(ab + (bb - ab) * t);
   return (r << 16) | (g << 8) | bl;
+}
+
+// Recolour a land base by altitude: base -> highland -> snow as it climbs from the
+// shoreline to the peaks. Capped blends keep lowland near its base hue; only the top of the
+// range turns rocky and then snowy.
+function elevationColor(base: number, alt: number): number {
+  let n = (alt - SEA_LEVEL) / (LAND_PEAK - SEA_LEVEL);
+  n = n < 0 ? 0 : n > 1 ? 1 : n;
+  const rock = lerpColor(base, HIGHLAND_COLOR, Math.min(1, n / 0.7) * 0.7);
+  if (n <= 0.78) return rock;
+  return lerpColor(rock, SNOW_COLOR, (n - 0.78) / 0.22); // snow-cap the top fifth
+}
+
+// Cheap deterministic per-tile brightness jitter (~±6%) so large flats don't read as one
+// uniform fill. Stable hash of tile coords — recomputed only on build(), free per frame.
+function mottle(x: number, y: number): number {
+  let h = (Math.imul(x, 73856093) ^ Math.imul(y, 19349663)) >>> 0;
+  h = (h ^ (h >>> 13)) >>> 0;
+  return 0.94 + ((h % 1000) / 1000) * 0.12; // 0.94..1.06
 }
 
 interface Pt {
@@ -116,7 +143,11 @@ export class TerrainPainter {
       return;
     }
     for (let b = 0; b < WATER_BANDS; b++) {
-      const m = 0.5 + 0.5 * Math.sin(t * WATER_SPEED + (b * (Math.PI * 2)) / WATER_BANDS);
+      const phase = t * WATER_SPEED + (b / WATER_BANDS) * Math.PI * 2;
+      // Two summed sines (a slower half-rate beat) so the shimmer breathes instead of
+      // pulsing like a metronome. Still one tint per band — O(bands) and no geometry work.
+      let m = 0.5 + 0.34 * Math.sin(phase) + 0.16 * Math.sin(phase * 0.5 + b);
+      m = m < 0 ? 0 : m > 1 ? 1 : m;
       this.waterBands[b]!.tint = lerpColor(WATER_DEEP, WATER_BRIGHT, m);
     }
   }
@@ -257,9 +288,11 @@ export class TerrainPainter {
           continue;
         }
 
-        // Land / shore / forest: shaded diamond.
-        const base = TERRAIN_COLOR[t] ?? 0xff00ff;
-        this.landG.poly(poly).fill({ color: shade(base, this.shadeFactor(h)) });
+        // Land / shore / forest: shaded diamond, recoloured by elevation and broken up by a
+        // stable per-tile jitter so broad flats aren't a single uniform fill.
+        const base = elevationColor(TERRAIN_COLOR[t] ?? 0xff00ff, altitude[i]!);
+        const shadeF = this.shadeFactor(h);
+        this.landG.poly(poly).fill({ color: shade(base, shadeF * mottle(x, y)) });
 
         // Forest gets a darker inner mottle so canopies don't read as flat grass.
         if (t === Terrain.Forest) {
@@ -270,7 +303,7 @@ export class TerrainPainter {
           const il = lerpPt(pts[3], c, 0.45);
           this.landG
             .poly([it.x, it.y, ir.x, ir.y, ib.x, ib.y, il.x, il.y])
-            .fill({ color: shade(base, this.shadeFactor(h) * 0.82) });
+            .fill({ color: shade(base, shadeF * 0.82) });
         }
 
         // Coast fringe on water-facing edges: foam at the waterline, sand just inland.
@@ -362,7 +395,9 @@ export class TerrainPainter {
     if (!this.hasWater) return;
     for (let j = 0; j < this.atlasWaterIdx.length; j++) {
       const idx = this.atlasWaterIdx[j]!;
-      const m = 0.5 + 0.5 * Math.sin(t * WATER_SPEED + (j % WATER_BANDS) * ((Math.PI * 2) / WATER_BANDS));
+      const phase = t * WATER_SPEED + (j % WATER_BANDS) * ((Math.PI * 2) / WATER_BANDS);
+      let m = 0.5 + 0.34 * Math.sin(phase) + 0.16 * Math.sin(phase * 0.5 + j);
+      m = m < 0 ? 0 : m > 1 ? 1 : m;
       this.spritePool[idx]!.tint = lerpColor(WATER_DEEP, WATER_BRIGHT, m);
     }
   }
